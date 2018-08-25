@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sort"
 	"strconv"
 )
 
@@ -41,6 +42,17 @@ type Reaction struct {
 	Count int    `json:"count"`
 }
 
+type Emoji struct {
+	Key   string
+	Value int
+}
+
+type EmojiList []Emoji
+
+func (p EmojiList) Len() int           { return len(p) }
+func (p EmojiList) Less(i, j int) bool { return p[i].Value < p[j].Value }
+func (p EmojiList) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
+
 func main() {
 	if token == "" {
 		log.Fatal("SLACK_TOKEN environment variable should be set")
@@ -62,10 +74,26 @@ func main() {
 		}
 	}
 
-	fmt.Println(len(reactions))
-	for key, value := range reactions {
-		fmt.Println(key + " : " + strconv.Itoa(value))
+	//fmt.Println(len(reactions))
+	//for key, value := range reactions {
+	//	fmt.Println(key + " : " + strconv.Itoa(value))
+	//}
+
+	emojiList := rankByEmojiCount(reactions)
+	for _, emoji := range emojiList {
+		fmt.Println(emoji.Key + " : " + strconv.Itoa(emoji.Value))
 	}
+}
+
+func rankByEmojiCount(reactions map[string]int) EmojiList {
+	emojiList := make(EmojiList, len(reactions))
+	i := 0
+	for k, v := range reactions {
+		emojiList[i] = Emoji{k, v}
+		i++
+	}
+	sort.Sort(sort.Reverse(emojiList))
+	return emojiList
 }
 
 func getReactions() bool {
