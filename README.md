@@ -1,5 +1,17 @@
 # Slack emoji ranking
 
+## get token of Slack
+
+* [Slack API 推奨Tokenについて - Qiita](https://qiita.com/ykhirao/items/3b19ee6a1458cfb4ba21)
+
+* Token need following scope
+
+```
+channels:read
+chat:write:user
+reactions:read
+```
+
 ## set environment
 
 ```
