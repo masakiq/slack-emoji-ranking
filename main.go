@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"sort"
 	"strconv"
+	"strings"
 )
 
 var (
@@ -96,11 +98,16 @@ func main() {
 	//}
 
 	emojiList := rankByEmojiCount(reactions)
+	var builder strings.Builder
 	for _, emoji := range emojiList {
 		fmt.Println(emoji.Key + " : " + strconv.Itoa(emoji.Value))
+		builder.WriteString(":" + emoji.Key + ":" + " : " + strconv.Itoa(emoji.Value) + "\n")
 	}
 
-	fmt.Println(getChannelID())
+	channelID := getChannelID()
+	fmt.Println(channelID)
+
+	postMessage(channelID, builder.String())
 }
 
 func rankByEmojiCount(reactions map[string]int) EmojiList {
@@ -187,12 +194,39 @@ func getChannelID() string {
 	response := &ChannelListResponse{}
 	err = json.NewDecoder(resp.Body).Decode(response)
 
-	target_channel_id := ""
+	targetChannelID := ""
 	for _, channel := range response.Channels {
 		if channel.Name == slack_channel {
-			target_channel_id = channel.ID
+			targetChannelID = channel.ID
 		}
 	}
 
-	return target_channel_id
+	return targetChannelID
+}
+
+func postMessage(channelID string, message string) {
+	values := url.Values{}
+	values.Set("token", token)
+	values.Add("channel", channelID)
+	values.Add("text", message)
+
+	req, err := http.NewRequest(
+		"POST",
+		chatPostMessageUrl,
+		strings.NewReader(values.Encode()),
+	)
+	if err != nil {
+		log.Print(err)
+		os.Exit(1)
+	}
+
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer resp.Body.Close()
 }
