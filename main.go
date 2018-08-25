@@ -11,10 +11,13 @@ import (
 )
 
 var (
-	reactionsListUrl string = "https://slack.com/api/reactions.list"
-	reactionList     []Reaction
-	cursor           string = "first cursor"
-	token            string = os.Getenv("SLACK_TOKEN")
+	reactionsListUrl   string = "https://slack.com/api/reactions.list"
+	channelsListUrl    string = "https://slack.com/api/channels.list"
+	chatPostMessageUrl string = "https://slack.com/api/chat.postMessage"
+	reactionList       []Reaction
+	cursor             string = "first cursor"
+	token              string = os.Getenv("SLACK_TOKEN")
+	slack_channel      string = os.Getenv("SLACK_CHANNEL")
 )
 
 type Response struct {
@@ -37,6 +40,15 @@ type Message struct {
 	Reactions []Reaction `json:"reactions"`
 }
 
+type ChannelListResponse struct {
+	Channels []Channel `json:"channels"`
+}
+
+type Channel struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
 type Reaction struct {
 	Name  string `json:"name"`
 	Count int    `json:"count"`
@@ -56,6 +68,10 @@ func (p EmojiList) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
 func main() {
 	if token == "" {
 		log.Fatal("SLACK_TOKEN environment variable should be set")
+	}
+
+	if slack_channel == "" {
+		slack_channel = "general"
 	}
 
 	for {
@@ -83,6 +99,8 @@ func main() {
 	for _, emoji := range emojiList {
 		fmt.Println(emoji.Key + " : " + strconv.Itoa(emoji.Value))
 	}
+
+	fmt.Println(getChannelID())
 }
 
 func rankByEmojiCount(reactions map[string]int) EmojiList {
@@ -142,4 +160,39 @@ func getReactions() bool {
 	cursor = response.ResponseMetadata.NextCursor
 	fmt.Println(cursor)
 	return false
+}
+
+func getChannelID() string {
+	req, err := http.NewRequest("GET", channelsListUrl, nil)
+	if err != nil {
+		log.Print(err)
+		os.Exit(1)
+	}
+
+	q := req.URL.Query()
+	q.Add("token", token)
+
+	req.URL.RawQuery = q.Encode()
+	fmt.Println(req.URL.String())
+
+	//resp, err := http.Get(reactionsListUrl + "?" + values.Encode())
+	resp, err := http.Get(req.URL.String())
+	if err != nil {
+		fmt.Println(err)
+		return ""
+	}
+
+	defer resp.Body.Close()
+
+	response := &ChannelListResponse{}
+	err = json.NewDecoder(resp.Body).Decode(response)
+
+	target_channel_id := ""
+	for _, channel := range response.Channels {
+		if channel.Name == slack_channel {
+			target_channel_id = channel.ID
+		}
+	}
+
+	return target_channel_id
 }
