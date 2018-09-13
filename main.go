@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 var (
@@ -21,6 +22,8 @@ var (
 	token                  string = os.Getenv("SLACK_TOKEN")
 	slack_channel          string = os.Getenv("SLACK_CHANNEL")
 	currentClientMsgIDList []string
+	currentTime            int32 = int32(time.Now().UTC().Unix())
+	targetTime             int32 = currentTime - (24 * 60 * 60 * 17)
 )
 
 type Response struct {
@@ -43,6 +46,7 @@ type Message struct {
 	Type        string     `json:"type"`
 	ClientMsgID string     `json:"client_msg_id"`
 	Reactions   []Reaction `json:"reactions"`
+	Ts          string     `json:"ts"`
 }
 
 type File struct {
@@ -70,7 +74,8 @@ type UserListResponse struct {
 }
 
 type User struct {
-	ID string `json:"id"`
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
 type Emoji struct {
@@ -96,6 +101,8 @@ func main() {
 	users := getUsers()
 	nextCursor := ""
 	for _, user := range users {
+		fmt.Println(user.ID)
+		fmt.Println(user.Name)
 		nextCursor = "first"
 		currentClientMsgIDList = []string{}
 		for {
@@ -175,7 +182,6 @@ func getReactions(user User, nextCursor string) string {
 	q := req.URL.Query()
 	q.Add("token", token)
 	q.Add("user", user.ID)
-	fmt.Println(nextCursor)
 	if nextCursor != "first" {
 		q.Add("cursor", nextCursor)
 	}
@@ -196,6 +202,9 @@ func getReactions(user User, nextCursor string) string {
 
 	for _, item := range response.Items {
 		if item.Type == "message" {
+			if isPastTargetTime(item.Message.Ts) {
+				continue
+			}
 			if isIncludeClientMsgID(item.Message.ClientMsgID) {
 				continue
 			}
@@ -222,7 +231,6 @@ func getReactions(user User, nextCursor string) string {
 	}
 
 	cursor := response.ResponseMetadata.NextCursor
-	fmt.Println(cursor)
 	return cursor
 }
 
@@ -304,4 +312,9 @@ func isIncludeClientMsgID(clientMsgID string) bool {
 		}
 	}
 	return false
+}
+
+func isPastTargetTime(ts string) bool {
+	f, _ := strconv.ParseFloat(ts, 64)
+	return int32(f) < targetTime
 }
