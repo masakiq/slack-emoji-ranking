@@ -23,7 +23,7 @@ var (
 	slack_channel          string = os.Getenv("SLACK_CHANNEL")
 	currentClientMsgIDList []string
 	currentTime            int32 = int32(time.Now().UTC().Unix())
-	targetTime             int32 = currentTime - (24 * 60 * 60 * 17)
+	targetTime             int32 = currentTime - (24 * 60 * 60 * 7)
 )
 
 type Response struct {
@@ -105,7 +105,7 @@ func main() {
 		fmt.Println(user.Name)
 		nextCursor = "first"
 		currentClientMsgIDList = []string{}
-		for {
+		for i := 1; i <= 10; i++ {
 			if nextCursor = getReactions(user, nextCursor); nextCursor == "" {
 				break
 			}
