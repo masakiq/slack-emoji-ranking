@@ -13,13 +13,16 @@ import (
 )
 
 var (
+	usersListUrl       string = "https://slack.com/api/users.list"
 	reactionsListUrl   string = "https://slack.com/api/reactions.list"
 	channelsListUrl    string = "https://slack.com/api/channels.list"
 	chatPostMessageUrl string = "https://slack.com/api/chat.postMessage"
 	reactionList       []Reaction
-	cursor             string = "first cursor"
-	token              string = os.Getenv("SLACK_TOKEN")
-	slack_channel      string = os.Getenv("SLACK_CHANNEL")
+	// cursor             string = "first cursor"
+	token                  string = os.Getenv("SLACK_TOKEN")
+	slack_channel          string = os.Getenv("SLACK_CHANNEL")
+	currentClientMsgID     string = ""
+	currentClientMsgIDList []string
 )
 
 type Response struct {
@@ -35,11 +38,24 @@ type Item struct {
 	Type    string  `json:"type"`
 	Channel string  `json:"channel"`
 	Message Message `json:"message"`
+	File    File    `json:"file"`
 }
 
 type Message struct {
-	Type      string     `json:"type"`
+	Type        string     `json:"type"`
+	ClientMsgID string     `json:"client_msg_id"`
+	Reactions   []Reaction `json:"reactions"`
+}
+
+type File struct {
+	ID        string     `json:"id"`
 	Reactions []Reaction `json:"reactions"`
+}
+
+type Reaction struct {
+	Name    string   `json:"name"`
+	Count   int      `json:"count"`
+	UserIDs []string `json:"users"`
 }
 
 type ChannelListResponse struct {
@@ -51,9 +67,12 @@ type Channel struct {
 	Name string `json:"name"`
 }
 
-type Reaction struct {
-	Name  string `json:"name"`
-	Count int    `json:"count"`
+type UserListResponse struct {
+	Users []User `json:"members"`
+}
+
+type User struct {
+	ID string `json:"id"`
 }
 
 type Emoji struct {
@@ -76,9 +95,16 @@ func main() {
 		slack_channel = "general"
 	}
 
-	for {
-		if result := getReactions(); result {
-			break
+	users := getUsers()
+	nextCursor := "first"
+	for _, user := range users {
+		nextCursor = "first"
+		currentClientMsgIDList = []string{}
+		fmt.Println(user.ID)
+		for {
+			if nextCursor := getReactions(user, nextCursor); nextCursor == "" {
+				break
+			}
 		}
 	}
 
@@ -86,9 +112,9 @@ func main() {
 	for _, reaction := range reactionList {
 		count, ok := reactions[reaction.Name]
 		if ok == false {
-			reactions[reaction.Name] = reaction.Count
+			reactions[reaction.Name] = 1
 		} else {
-			reactions[reaction.Name] = count + reaction.Count
+			reactions[reaction.Name] = count + 1
 		}
 	}
 
@@ -100,11 +126,11 @@ func main() {
 	emojiList := rankByEmojiCount(reactions)
 	var builder strings.Builder
 	for _, emoji := range emojiList {
-		fmt.Println(emoji.Key + " : " + strconv.Itoa(emoji.Value))
 		builder.WriteString(":" + emoji.Key + ":" + " : " + strconv.Itoa(emoji.Value) + "\n")
 	}
 
 	channelID := getChannelID()
+	fmt.Println(builder.String())
 	fmt.Println(channelID)
 
 	postMessage(channelID, builder.String())
@@ -121,7 +147,35 @@ func rankByEmojiCount(reactions map[string]int) EmojiList {
 	return emojiList
 }
 
-func getReactions() bool {
+func getUsers() []User {
+	req, err := http.NewRequest("GET", usersListUrl, nil)
+	if err != nil {
+		log.Print(err)
+		os.Exit(1)
+	}
+
+	q := req.URL.Query()
+	q.Add("token", token)
+	req.URL.RawQuery = q.Encode()
+	fmt.Println(req.URL.String())
+
+	resp, err := http.Get(req.URL.String())
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+
+	defer resp.Body.Close()
+
+	fmt.Println(resp.Body)
+
+	response := &UserListResponse{}
+	err = json.NewDecoder(resp.Body).Decode(response)
+
+	return response.Users
+}
+
+func getReactions(user User, nextCursor string) string {
 	req, err := http.NewRequest("GET", reactionsListUrl, nil)
 	if err != nil {
 		log.Print(err)
@@ -130,11 +184,9 @@ func getReactions() bool {
 
 	q := req.URL.Query()
 	q.Add("token", token)
-	if cursor != "first cursor" {
-		q.Add("cursor", cursor)
-	}
-	if cursor == "" {
-		return true
+	q.Add("user", user.ID)
+	if nextCursor != "first" {
+		q.Add("cursor", nextCursor)
 	}
 	req.URL.RawQuery = q.Encode()
 	fmt.Println(req.URL.String())
@@ -143,7 +195,7 @@ func getReactions() bool {
 	resp, err := http.Get(req.URL.String())
 	if err != nil {
 		fmt.Println(err)
-		return true
+		os.Exit(1)
 	}
 
 	defer resp.Body.Close()
@@ -154,19 +206,34 @@ func getReactions() bool {
 	err = json.NewDecoder(resp.Body).Decode(response)
 
 	for _, item := range response.Items {
-		for _, reaction := range item.Message.Reactions {
-			fmt.Println(reaction.Name)
-			fmt.Println(reaction.Count)
-			reactionList = append(reactionList, reaction)
+		if item.Type == "message" {
+			if isIncludeClientMsgID(item.Message.ClientMsgID) {
+				continue
+			}
+			currentClientMsgIDList = append(currentClientMsgIDList, item.Message.ClientMsgID)
+			for _, reaction := range item.Message.Reactions {
+				if isIncludeUser(user, reaction) != true {
+					continue
+				}
+				reactionList = append(reactionList, reaction)
+			}
+		} else if item.Type == "file" {
+			fmt.Println("item type is file")
+			for _, reaction := range item.File.Reactions {
+				if isIncludeUser(user, reaction) != true {
+					continue
+				}
+				reactionList = append(reactionList, reaction)
+			}
 		}
 	}
 
 	fmt.Println(len(response.Items))
 	fmt.Println(len(reactionList))
 	fmt.Println(response.ResponseMetadata.NextCursor)
-	cursor = response.ResponseMetadata.NextCursor
+	cursor := response.ResponseMetadata.NextCursor
 	fmt.Println(cursor)
-	return false
+	return cursor
 }
 
 func getChannelID() string {
@@ -229,4 +296,25 @@ func postMessage(channelID string, message string) {
 		return
 	}
 	defer resp.Body.Close()
+}
+
+func isIncludeUser(user User, reaction Reaction) bool {
+	for _, userID := range reaction.UserIDs {
+		fmt.Println("check user id")
+		fmt.Println(userID)
+		fmt.Println(user.ID)
+		if userID == user.ID {
+			return true
+		}
+	}
+	return false
+}
+
+func isIncludeClientMsgID(clientMsgID string) bool {
+	for _, id := range currentClientMsgIDList {
+		if id == clientMsgID {
+			return true
+		}
+	}
+	return false
 }
