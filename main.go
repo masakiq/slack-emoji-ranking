@@ -189,10 +189,15 @@ func getReactions(user User, nextCursor string) string {
 	fmt.Println(req.URL.String())
 
 	//resp, err := http.Get(reactionsListUrl + "?" + values.Encode())
-	resp, err := http.Get(req.URL.String())
+	//resp, err := http.Get(req.URL.String())
+	timeout := time.Duration(3 * time.Second)
+	client := http.Client{
+		Timeout: timeout,
+	}
+	resp, err := client.Get(req.URL.String())
 	if err != nil {
 		fmt.Println(err)
-		os.Exit(1)
+		return ""
 	}
 
 	defer resp.Body.Close()
