@@ -27,6 +27,7 @@ var (
 )
 
 type Response struct {
+	OK               bool             `json:"ok"`
 	ResponseMetadata ResponseMetadata `json:"response_metadata"`
 	Items            []Item           `json:"items"`
 }
@@ -101,11 +102,12 @@ func main() {
 	users := getUsers()
 	nextCursor := ""
 	for _, user := range users {
+		fmt.Println("--- start get reaction per user ---")
 		fmt.Println(user.ID)
 		fmt.Println(user.Name)
 		nextCursor = "first"
 		currentClientMsgIDList = []string{}
-		for i := 1; i <= 10; i++ {
+		for i := 1; i <= 200; i++ {
 			if nextCursor = getReactions(user, nextCursor); nextCursor == "" {
 				break
 			}
@@ -204,6 +206,11 @@ func getReactions(user User, nextCursor string) string {
 
 	response := &Response{}
 	err = json.NewDecoder(resp.Body).Decode(response)
+
+	if response.OK == false {
+		fmt.Println("reaction.list response is false")
+		return ""
+	}
 
 	for _, item := range response.Items {
 		if item.Type == "message" {
